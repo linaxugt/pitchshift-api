@@ -1,28 +1,37 @@
 from flask import Flask, request, send_file
+import tempfile
 import librosa
 import soundfile as sf
-import tempfile
+import os
 
 app = Flask(__name__)
 
 @app.route('/shift_pitch', methods=['POST'])
 def shift_pitch():
-    audio = request.files.get("audio_file")
-    n_steps = float(request.form.get("n_steps", 0))
+    if 'audio_file' not in request.files or 'n_steps' not in request.form:
+        return "Missing file or pitch shift parameter", 400
 
-    if not audio:
-        return {"error": "No file received"}, 400
+    audio_file = request.files['audio_file']
+    n_steps = float(request.form['n_steps'])
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_in:
-        audio.save(temp_in.name)
-        y, sr = librosa.load(temp_in.name, sr=None)
-    
-    y_shifted = librosa.effects.pitch_shift(y, sr=sr, n_steps=n_steps)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        input_path = os.path.join(tmpdir, "input.wav")
+        output_path = os.path.join(tmpdir, "output.wav")
+       
+        # 保存上传的文件
+        audio_file.save(input_path)
 
-    temp_out_path = tempfile.mktemp(suffix=".wav")
-    sf.write(temp_out_path, y_shifted, sr)
+        # 加载音频
+        y, sr = librosa.load(input_path, sr=None)
+       
+        # 变调
+        y_shifted = librosa.effects.pitch_shift(y, sr, n_steps=n_steps)
 
-    return send_file(temp_out_path, mimetype="audio/wav", as_attachment=True)
+        # 保存变调后的音频
+        sf.write(output_path, y_shifted, sr)
 
-if __name__ == '__main__':
-    app.run(debug=True)
+        return send_file(output_path, mimetype="audio/wav", as_attachment=True, download_name="shifted.wav")
+
+@app.route('/')
+def home():
+    return "Pitch Shift API is running!"
